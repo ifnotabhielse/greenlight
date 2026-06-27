@@ -1,0 +1,25 @@
+# Real rollout: no `simulate` block, so the latency gate queries Prometheus.
+# Run the controller WITHOUT simulate mode:  GREENLIGHT_SIMULATE=false kopf run -m greenlight.controller
+# and point it at your Prometheus via PROMETHEUS_URL (or the spec.prometheus.url below).
+apiVersion: greenlight.dev/v1alpha1
+kind: ModelRollout
+metadata:
+  name: sentiment-rollout
+spec:
+  service: sentiment-classifier
+  stable:
+    version: v1
+  candidate:
+    version: v2
+  steps: [5, 25, 50, 100]
+  stepDuration: 1m          # also used as the Prometheus rate() window
+  rollback: auto
+  prometheus:
+    url: http://prometheus-server.monitoring.svc
+    latencyMetric: request_duration_seconds_bucket
+    versionLabel: version
+  gates:
+    - type: latency
+      threshold: 800        # max p95 in ms
+    # - type: quality        # uncomment once Ragas/LLM-as-judge is wired
+    #   threshold: 0.85

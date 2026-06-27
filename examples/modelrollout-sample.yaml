@@ -1,0 +1,24 @@
+# Demo rollout: the candidate (v2) is "worse" — its simulated quality score (0.78)
+# is below the quality gate threshold (0.85), so Greenlight rolls it back at step 1.
+# Flip simulate.qualityScore to 0.95 to watch a full promotion instead.
+apiVersion: greenlight.dev/v1alpha1
+kind: ModelRollout
+metadata:
+  name: demo
+spec:
+  service: sentiment-classifier
+  stable:
+    version: v1
+  candidate:
+    version: v2
+  steps: [5, 25, 50, 100]
+  stepDuration: 10s
+  rollback: auto
+  gates:
+    - type: quality
+      threshold: 0.85
+    - type: latency
+      threshold: 800
+  simulate:
+    qualityScore: 0.78
+    latencyP95Ms: 220

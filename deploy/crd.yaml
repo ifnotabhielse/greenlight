@@ -1,0 +1,92 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: modelrollouts.greenlight.dev
+spec:
+  group: greenlight.dev
+  scope: Namespaced
+  names:
+    kind: ModelRollout
+    plural: modelrollouts
+    singular: modelrollout
+    shortNames: ["mr"]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["service", "stable", "candidate", "steps", "gates"]
+              properties:
+                service:
+                  type: string
+                  description: "Name of the serving target (e.g. KServe InferenceService)."
+                stable:
+                  type: object
+                  required: ["version"]
+                  properties:
+                    version: { type: string }
+                candidate:
+                  type: object
+                  required: ["version"]
+                  properties:
+                    version: { type: string }
+                steps:
+                  type: array
+                  description: "Ordered traffic-weight percentages for the candidate."
+                  items: { type: integer, minimum: 0, maximum: 100 }
+                stepDuration:
+                  type: string
+                  default: "30s"
+                  description: "How long to hold + evaluate each step (Go duration, e.g. 2m)."
+                gates:
+                  type: array
+                  items:
+                    type: object
+                    required: ["type", "threshold"]
+                    properties:
+                      type:
+                        type: string
+                        enum: ["quality", "latency"]
+                      threshold:
+                        type: number
+                        description: "quality: min score (0-1). latency: max p95 ms."
+                rollback:
+                  type: string
+                  enum: ["auto", "manual"]
+                  default: "auto"
+                prometheus:
+                  type: object
+                  description: "Per-rollout Prometheus overrides (defaults come from controller env)."
+                  properties:
+                    url: { type: string }
+                    latencyMetric: { type: string }
+                    versionLabel: { type: string }
+                # demo/dev only — drives gate outcomes without real KServe/Ragas wired.
+                simulate:
+                  type: object
+                  properties:
+                    qualityScore: { type: number }
+                    latencyP95Ms: { type: number }
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Weight
+          type: integer
+          jsonPath: .status.currentWeight
+        - name: Message
+          type: string
+          jsonPath: .status.message
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
