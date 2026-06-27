@@ -1,19 +1,23 @@
 """Quality gates evaluated at each rollout step.
 
-Each gate returns a GateResult. The quality gate still runs in simulate mode
-(Ragas/LLM-as-judge wiring is a later commit); the latency gate now queries
-Prometheus for real, falling back to simulate mode only when GREENLIGHT_SIMULATE
-is set so the local demo keeps working without a metrics stack.
+- latency gate: queries Prometheus for the candidate's p95 (built in v0.2).
+- quality gate: evaluates LLM answer quality via the providers in quality.py
+  (LLM-as-judge or Langfuse) — the feature that distinguishes Greenlight from
+  SLO-only progressive-delivery tools.
+
+Both fall back to simulate mode (driven by spec.simulate) so the local demo
+needs no Prometheus, no eval infra, and no judge API. A None/inconclusive
+result tells the controller to wait and retry rather than pass or fail.
 """
 from __future__ import annotations
 from dataclasses import dataclass
 import os
 
 from .prometheus import query_scalar, p95_latency_query, PrometheusError
+from .quality import score as quality_score, QualityError
 
 SIMULATE = os.getenv("GREENLIGHT_SIMULATE", "true").lower() == "true"
 
-# Defaults for the latency gate's Prometheus query; override per-rollout via spec.prometheus.
 DEFAULT_PROM_URL = os.getenv("PROMETHEUS_URL", "http://prometheus-server.monitoring.svc")
 DEFAULT_LATENCY_METRIC = os.getenv("GREENLIGHT_LATENCY_METRIC", "request_duration_seconds_bucket")
 DEFAULT_VERSION_LABEL = os.getenv("GREENLIGHT_VERSION_LABEL", "version")
@@ -21,7 +25,6 @@ DEFAULT_VERSION_LABEL = os.getenv("GREENLIGHT_VERSION_LABEL", "version")
 
 @dataclass
 class GateContext:
-    """Everything a gate needs to evaluate itself, assembled by the controller."""
     candidate_version: str
     service: str
     window: str = "1m"
@@ -49,32 +52,34 @@ class GateResult:
 
 def evaluate_gate(gate: dict, ctx: GateContext) -> GateResult:
     gtype = gate["type"]
-    threshold = float(gate["threshold"])
     if gtype == "quality":
-        return _quality_gate(threshold, ctx)
+        return _quality_gate(gate, ctx)
     if gtype == "latency":
-        return _latency_gate(threshold, ctx)
-    return GateResult(gtype, False, None, threshold, detail="unknown gate type")
+        return _latency_gate(gate, ctx)
+    return GateResult(gtype, False, None, float(gate.get("threshold", 0)), detail="unknown gate type")
 
 
-def _quality_gate(threshold: float, ctx: GateContext) -> GateResult:
-    """Min eval score (0-1) on sampled live responses. PASS when observed >= threshold."""
+def _quality_gate(gate: dict, ctx: GateContext) -> GateResult:
+    """Min LLM quality score (0-1). PASS when observed >= threshold."""
+    threshold = float(gate["threshold"])
     if SIMULATE:
         observed = float((ctx.simulate or {}).get("qualityScore", 0.95))
-    else:
-        # TODO: sample N live candidate responses, score with Ragas / LLM-as-judge.
-        raise NotImplementedError("wire Ragas/Langfuse eval here")
-    return GateResult("quality", observed >= threshold, observed, threshold)
+        return GateResult("quality", observed >= threshold, observed, threshold)
+
+    try:
+        observed = quality_score(gate, ctx.candidate_version)
+    except QualityError as exc:
+        return GateResult("quality", False, None, threshold,
+                          inconclusive=True, detail=f"eval: {exc}")
+    if observed is None:
+        return GateResult("quality", False, None, threshold,
+                          inconclusive=True, detail="no scored responses yet")
+    return GateResult("quality", observed >= threshold, round(observed, 3), threshold)
 
 
-def _latency_gate(threshold: float, ctx: GateContext) -> GateResult:
-    """Max p95 latency in ms. PASS when observed <= threshold.
-
-    Queries Prometheus for the candidate's p95 over the step window. Empty result
-    (no traffic/samples yet) -> inconclusive, so the controller waits rather than
-    rolling back on a cold metric. Prometheus errors -> inconclusive too (don't
-    promote on an unverifiable gate, but don't hard-fail on a flaky scrape).
-    """
+def _latency_gate(gate: dict, ctx: GateContext) -> GateResult:
+    """Max p95 latency in ms. PASS when observed <= threshold."""
+    threshold = float(gate["threshold"])
     if SIMULATE:
         observed = float((ctx.simulate or {}).get("latencyP95Ms", 200.0))
         return GateResult("latency", observed <= threshold, observed, threshold)
@@ -86,10 +91,8 @@ def _latency_gate(threshold: float, ctx: GateContext) -> GateResult:
     except PrometheusError as exc:
         return GateResult("latency", False, None, threshold,
                           inconclusive=True, detail=f"prometheus: {exc}")
-
     if value is None:
         return GateResult("latency", False, None, threshold,
                           inconclusive=True, detail="no samples yet")
-
-    observed_ms = value * 1000.0  # histogram is in seconds; threshold is ms
+    observed_ms = value * 1000.0
     return GateResult("latency", observed_ms <= threshold, round(observed_ms, 1), threshold)

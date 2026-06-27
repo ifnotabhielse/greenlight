@@ -1,0 +1,31 @@
+# LLM quality-gated rollout. No `simulate` block -> the quality gate actively
+# probes the candidate and scores each answer with a judge LLM (LLM-as-judge).
+# Run real mode:  GREENLIGHT_SIMULATE=false JUDGE_API_KEY=sk-... kopf run -m greenlight.controller
+apiVersion: greenlight.dev/v1alpha1
+kind: ModelRollout
+metadata:
+  name: rag-rollout
+spec:
+  service: support-rag
+  stable: { version: v1 }
+  candidate: { version: v2 }
+  steps: [10, 50, 100]
+  stepDuration: 1m
+  rollback: auto
+  gates:
+    - type: quality
+      threshold: 0.85
+      provider: llm_judge
+      candidateEndpoint: http://support-rag-v2.default.svc/generate
+      criteria: "faithfulness to the source docs and factual correctness"
+      evalSet:
+        - prompt: "How do I reset my password?"
+        - prompt: "What is the refund window for annual plans?"
+        - prompt: "Does the API support pagination?"
+    - type: latency
+      threshold: 1500
+  # alternative quality provider (passive read of Langfuse scores):
+  # - type: quality
+  #   threshold: 0.9
+  #   provider: langfuse
+  #   scoreName: faithfulness

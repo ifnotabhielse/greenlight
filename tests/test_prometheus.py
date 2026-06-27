@@ -19,21 +19,21 @@ def test_latency_gate_pass(monkeypatch):
     # 0.2s p95 -> 200ms, under the 800ms threshold
     monkeypatch.setattr("greenlight.gates.SIMULATE", False)
     monkeypatch.setattr("greenlight.gates.query_scalar", lambda url, q: 0.2)
-    r = _latency_gate(800, _ctx())
+    r = _latency_gate({"type": "latency", "threshold": 800}, _ctx())
     assert r.passed and not r.inconclusive and r.observed == 200.0
 
 
 def test_latency_gate_fail(monkeypatch):
     monkeypatch.setattr("greenlight.gates.SIMULATE", False)
     monkeypatch.setattr("greenlight.gates.query_scalar", lambda url, q: 1.2)  # 1200ms
-    r = _latency_gate(800, _ctx())
+    r = _latency_gate({"type": "latency", "threshold": 800}, _ctx())
     assert not r.passed and not r.inconclusive
 
 
 def test_latency_gate_inconclusive_on_no_data(monkeypatch):
     monkeypatch.setattr("greenlight.gates.SIMULATE", False)
     monkeypatch.setattr("greenlight.gates.query_scalar", lambda url, q: None)
-    r = _latency_gate(800, _ctx())
+    r = _latency_gate({"type": "latency", "threshold": 800}, _ctx())
     assert r.inconclusive and not r.passed
 
 
@@ -42,5 +42,5 @@ def test_latency_gate_inconclusive_on_error(monkeypatch):
         raise prom.PrometheusError("connection refused")
     monkeypatch.setattr("greenlight.gates.SIMULATE", False)
     monkeypatch.setattr("greenlight.gates.query_scalar", boom)
-    r = _latency_gate(800, _ctx())
+    r = _latency_gate({"type": "latency", "threshold": 800}, _ctx())
     assert r.inconclusive

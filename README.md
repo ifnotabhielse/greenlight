@@ -1,7 +1,7 @@
 <h1 align="center">Greenlight</h1>
 
-<p align="center"><b>Quality-gated progressive delivery for ML & LLM endpoints.</b><br>
-<i>Flagger for models — promote a new model version only when live quality holds, roll back automatically when it doesn't.</i></p>
+<p align="center"><b>Quality-gated progressive delivery for LLM & ML endpoints.</b><br>
+<i>Promote a new model version only when live <b>answer quality</b> holds — eval scores, faithfulness, latency — and roll back automatically when it doesn't.</i></p>
 
 <p align="center">
 <a href="#"><img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
@@ -68,13 +68,17 @@ kubectl get modelrollout demo -w
 
 In simulate mode the sample candidate fails its quality gate at the 25% step — you'll watch the phase walk `Progressing → RollingBack → RolledBack`. Flip the candidate to the "good" example to watch a full promotion instead.
 
+## How this differs from SLO-gated tools
+
+Progressive-delivery tools (Argo Rollouts, Flagger) and the ML-focused [iter8](https://github.com/iter8-tools/iter8) gate promotion on **SLOs** — latency, error rate, custom metrics. Greenlight gates on **LLM answer quality**: an LLM-as-judge or Langfuse eval scores the candidate's actual responses, and the rollout only advances if faithfulness/quality holds. That's the gate the SLO-era tools don't have.
+
 ## Status
 
-Alpha, v0.3. Built and working: the controller loop, the `ModelRollout` CRD, traffic stepping with auto-rollback, the Prometheus p95 latency gate (with cold-metric handling), and **KServe traffic-shifting** via `canaryTrafficPercent`. The local demo runs in simulate mode with no serving stack required. Next: the quality + drift gates.
+Alpha, v0.4. Built and working: the controller loop, the `ModelRollout` CRD, traffic stepping with auto-rollback, KServe traffic-shifting, the Prometheus p95 latency gate, and the **LLM quality gate** (LLM-as-judge + Langfuse providers, with cold-metric/inconclusive handling). The local demo runs in simulate mode with no serving, eval, or judge infra required. Next: drift (Evidently) and cost gates.
 
 ## Roadmap
 
-Next up: quality gate (Ragas / LLM-as-judge) and drift gate (Evidently) — the dashed box in the diagram. Then: cost gate, shadow-traffic eval, blue-green mode, champion/challenger, Argo Rollouts metric-provider adapter, web UI, prompt-version rollouts.
+Next up: drift gate (Evidently) and cost-per-request gate — the dashed box in the diagram. Then: shadow-traffic eval, blue-green mode, champion/challenger, Argo Rollouts metric-provider adapter, web UI, prompt-version rollouts.
 
 ## License
 

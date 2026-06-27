@@ -59,6 +59,10 @@ spec:
                   type: string
                   enum: ["auto", "manual"]
                   default: "auto"
+                quality:
+                  type: object
+                  description: "LLM quality-gate config: provider plus provider settings."
+                  x-kubernetes-preserve-unknown-fields: true
                 prometheus:
                   type: object
                   description: "Per-rollout Prometheus overrides (defaults come from controller env)."
