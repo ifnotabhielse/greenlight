@@ -62,3 +62,11 @@ def test_quality_gate_real_inconclusive(monkeypatch):
     g = {"type": "quality", "threshold": 0.85, "provider": "langfuse"}
     r = _quality_gate(g, _ctx())
     assert r.inconclusive
+
+
+def test_quality_gate_spec_simulate_overrides_env(monkeypatch):
+    """SIMULATE env=false but spec.simulate present -> use simulated values."""
+    monkeypatch.setattr("greenlight.gates.SIMULATE", False)
+    g = {"type": "quality", "threshold": 0.85}
+    r = _quality_gate(g, _ctx({"qualityScore": 0.95}))
+    assert r.passed and not r.inconclusive and r.observed == 0.95

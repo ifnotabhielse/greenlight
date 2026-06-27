@@ -62,7 +62,7 @@ def evaluate_gate(gate: dict, ctx: GateContext) -> GateResult:
 def _quality_gate(gate: dict, ctx: GateContext) -> GateResult:
     """Min LLM quality score (0-1). PASS when observed >= threshold."""
     threshold = float(gate["threshold"])
-    if SIMULATE:
+    if SIMULATE or ctx.simulate:
         observed = float((ctx.simulate or {}).get("qualityScore", 0.95))
         return GateResult("quality", observed >= threshold, observed, threshold)
 
@@ -80,7 +80,7 @@ def _quality_gate(gate: dict, ctx: GateContext) -> GateResult:
 def _latency_gate(gate: dict, ctx: GateContext) -> GateResult:
     """Max p95 latency in ms. PASS when observed <= threshold."""
     threshold = float(gate["threshold"])
-    if SIMULATE:
+    if SIMULATE or ctx.simulate:
         observed = float((ctx.simulate or {}).get("latencyP95Ms", 200.0))
         return GateResult("latency", observed <= threshold, observed, threshold)
 

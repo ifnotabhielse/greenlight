@@ -44,3 +44,12 @@ def test_latency_gate_inconclusive_on_error(monkeypatch):
     monkeypatch.setattr("greenlight.gates.query_scalar", boom)
     r = _latency_gate({"type": "latency", "threshold": 800}, _ctx())
     assert r.inconclusive
+
+
+def test_latency_gate_spec_simulate_overrides_env(monkeypatch):
+    """SIMULATE env=false but spec.simulate present -> use simulated values."""
+    monkeypatch.setattr("greenlight.gates.SIMULATE", False)
+    ctx = GateContext(candidate_version="v2", service="svc", window="1m",
+                      simulate={"latencyP95Ms": 150.0}, prom_url="http://prom")
+    r = _latency_gate({"type": "latency", "threshold": 800}, ctx)
+    assert r.passed and not r.inconclusive and r.observed == 150.0
