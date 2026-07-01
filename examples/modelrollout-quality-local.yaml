@@ -1,0 +1,41 @@
+# Local REAL-judge demo of the LLM quality gate (no cost, no cloud).
+#
+# Runs the gate for real (GREENLIGHT_SIMULATE=false) against:
+#   - a local Ollama judge   (JUDGE_API_BASE=http://localhost:11434/v1)
+#   - the stub candidate     (tools/stub_candidate.py on 127.0.0.1:8099)
+# Traffic is shifted for real on the existing `sentiment-classifier`
+# InferenceService (the object already validated for KServe canary patching).
+#
+# Two notes vs examples/modelrollout-quality.yaml:
+#   1. criteria is doc-free ("helpfulness and factual correctness"). The judge
+#      is never handed the source docs, so a "faithfulness to the source docs"
+#      rubric scores every answer 0.0 — useless. Score on what the judge can
+#      actually see.
+#   2. quality gate ONLY. A real latency gate would query a Prometheus that
+#      isn't running, stay inconclusive, and force a rollback after
+#      MAX_INCONCLUSIVE ticks — which would mask the quality result.
+#
+# Drive it with tools/stub_candidate.py:
+#   MODE=good -> mean 0.933 >= 0.85 -> promote
+#   MODE=bad  -> mean 0.000 <  0.85 -> auto-rollback
+apiVersion: greenlight.dev/v1alpha1
+kind: ModelRollout
+metadata:
+  name: rag-rollout-local
+spec:
+  service: sentiment-classifier
+  stable: { version: v1 }
+  candidate: { version: v2 }
+  steps: [10, 50, 100]
+  stepDuration: 1m
+  rollback: auto
+  gates:
+    - type: quality
+      threshold: 0.85
+      provider: llm_judge
+      candidateEndpoint: http://127.0.0.1:8099
+      criteria: "helpfulness and factual correctness"
+      evalSet:
+        - prompt: "How do I reset my password?"
+        - prompt: "What is the refund window for annual plans?"
+        - prompt: "Does the API support pagination?"

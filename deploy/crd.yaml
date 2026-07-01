@@ -48,6 +48,11 @@ spec:
                   items:
                     type: object
                     required: ["type", "threshold"]
+                    # Providers carry their own config inline on the gate
+                    # (llm_judge: provider/candidateEndpoint/criteria/evalSet;
+                    # langfuse: provider/scoreName/langfuseUrl). The controller
+                    # reads these straight off the gate dict, so allow them.
+                    x-kubernetes-preserve-unknown-fields: true
                     properties:
                       type:
                         type: string
