@@ -99,10 +99,33 @@ def _judge(prompt: str, answer: str, criteria: str) -> float:
 
 
 def _parse_score(text: str) -> float:
-    m = _SCORE_RE.search(text or "")
-    if not m:
+    """Extract a 0-1 quality score from a judge reply.
+
+    A naive "first number, clamped to [0,1]" turns a chatty reply like
+    "I'd rate this 8 out of 10" into 1.0 — a silent false pass. So instead:
+
+    1. Prefer the LAST decimal that already lies in [0,1] (e.g. "0.85", or the
+       "0.9" in "On a scale of 1 to 10, I'd say 0.9").
+    2. Else clamp the last out-of-range decimal (keeps "1.5" -> 1.0).
+    3. Else only a bare 0 or 1 is a valid score; any other integer ("8 out of
+       10") is not a [0,1] score and raises -> inconclusive, never a false pass.
+    """
+    nums = _SCORE_RE.findall(text or "")
+    if not nums:
         raise QualityError(f"could not parse score from judge: {text!r}")
-    return max(0.0, min(1.0, float(m.group(1))))
+
+    in_range = [float(n) for n in nums if "." in n and 0.0 <= float(n) <= 1.0]
+    if in_range:
+        return in_range[-1]
+
+    decimals = [float(n) for n in nums if "." in n]
+    if decimals:
+        return max(0.0, min(1.0, decimals[-1]))
+
+    last_int = int(nums[-1])
+    if last_int in (0, 1):
+        return float(last_int)
+    raise QualityError(f"no [0,1] score in judge reply: {text!r}")
 
 
 def _langfuse(cfg: dict, version: str) -> float | None:

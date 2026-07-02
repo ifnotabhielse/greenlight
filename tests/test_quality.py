@@ -15,6 +15,32 @@ def test_parse_score_extracts_number():
         q._parse_score("no number here")
 
 
+def test_parse_score_prefers_in_range_decimal():
+    assert q._parse_score("0.85") == 0.85
+    assert q._parse_score("Score: 0.2 because it's off") == 0.2
+    # decimal in [0,1] wins over the surrounding integers
+    assert q._parse_score("On a scale of 1 to 10, I'd say 0.9") == 0.9
+
+
+def test_parse_score_chatty_rating_is_not_a_false_pass():
+    # the landmine: "8 out of 10" must NOT silently clamp to 1.0 (false pass).
+    # No [0,1] decimal present and the integers are >1 -> inconclusive, not 1.0.
+    with pytest.raises(q.QualityError):
+        q._parse_score("I'd rate this 8 out of 10")
+
+
+def test_parse_score_bare_integer_zero_or_one():
+    # a bare 0 or 1 is a legitimate score; larger integers are not
+    assert q._parse_score("1") == 1.0
+    assert q._parse_score("0") == 0.0
+    with pytest.raises(q.QualityError):
+        q._parse_score("9")
+
+
+def test_parse_score_prefers_last_in_range_decimal():
+    assert q._parse_score("maybe 0.4, but actually 0.8") == 0.8
+
+
 def test_llm_judge_mean(monkeypatch):
     monkeypatch.setattr(q, "_ask_candidate", lambda ep, p: "an answer")
     monkeypatch.setattr(q, "_judge", lambda p, a, c: 0.8)
