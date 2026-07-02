@@ -68,13 +68,43 @@ kubectl get modelrollout demo -w
 
 In simulate mode the sample candidate fails its quality gate at the 25% step — you'll watch the phase walk `Progressing → RollingBack → RolledBack`. Flip the candidate to the "good" example to watch a full promotion instead.
 
+## Testing
+
+**Unit tests** — 25 tests across `tests/test_prometheus.py`, `tests/test_quality.py`, `tests/test_state.py`, `tests/test_traffic.py`:
+
+```bash
+make test          # or: python -m pytest -q
+```
+
+**Real-judge validation (local, zero cost)** — the LLM quality gate is validated end-to-end against a local [Ollama](https://ollama.com) judge, no cloud spend. A stdlib stub candidate (`tools/stub_candidate.py`) serves faithful (`MODE=good`) or deliberately-wrong (`MODE=bad`) answers, and the real gate scores them with `qwen2.5:3b`.
+
+```bash
+ollama pull qwen2.5:3b
+
+# terminal A — stub candidate
+MODE=good python3 tools/stub_candidate.py        # 127.0.0.1:8099
+
+# terminal B — controller in real mode (judge points at Ollama)
+GREENLIGHT_SIMULATE=false \
+  JUDGE_API_BASE=http://localhost:11434/v1 JUDGE_API_KEY=ollama JUDGE_MODEL=qwen2.5:3b \
+  kopf run -m greenlight.controller -n default
+
+# terminal C — apply the local rollout and watch
+kubectl apply -f examples/modelrollout-quality-local.yaml
+kubectl get modelrollout rag-rollout-local -n default -w
+```
+
+`MODE=good` scores **0.933 ≥ 0.85** → canary advances 10→50→100 → **Promoted**. Restart the stub with `MODE=bad` (delete the rollout while the controller is running first, so its finalizer is removed) and it scores **0.0** → **RolledBack** at the first step.
+
+> A reference-free LLM judge scores plausibility and coherence, not ground truth: it reliably fails incoherent, contradictory, or refusing answers, but a confident-but-wrong answer can slip through. Grounding the judge with reference answers is future work.
+
 ## How this differs from SLO-gated tools
 
 Progressive-delivery tools (Argo Rollouts, Flagger) and the ML-focused [iter8](https://github.com/iter8-tools/iter8) gate promotion on **SLOs** — latency, error rate, custom metrics. Greenlight gates on **LLM answer quality**: an LLM-as-judge or Langfuse eval scores the candidate's actual responses, and the rollout only advances if faithfulness/quality holds. That's the gate the SLO-era tools don't have.
 
 ## Status
 
-Alpha, v0.4. Built and working: the controller loop, the `ModelRollout` CRD, traffic stepping with auto-rollback, KServe traffic-shifting, the Prometheus p95 latency gate, and the **LLM quality gate** (LLM-as-judge + Langfuse providers, with cold-metric/inconclusive handling). The local demo runs in simulate mode with no serving, eval, or judge infra required. Next: drift (Evidently) and cost gates.
+Alpha, v0.4. Built and working: the controller loop, the `ModelRollout` CRD, traffic stepping with auto-rollback, KServe traffic-shifting, the Prometheus p95 latency gate, and the **LLM quality gate** (LLM-as-judge + Langfuse providers, with cold-metric/inconclusive handling). The LLM-as-judge path is validated end-to-end against a real local judge (see [Testing](#testing)); the local demo also runs fully in simulate mode with no serving, eval, or judge infra required. Next: drift (Evidently) and cost gates.
 
 ## Roadmap
 
